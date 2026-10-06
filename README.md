@@ -55,15 +55,104 @@ The baseline confirmed:
 - Splunk version 10.4.0
 - Docker client installed
 
-The active Mac network interface was also documented before testing.
+The Mac hosts the central SIEM used for correlation.
 
-![Mac host baseline](evidence/01-mac-host-baseline.png)
+The original Mac terminal screenshot is intentionally not included in the public evidence because it contains unnecessary host identifying information.
+
+---
+
+# Windows Endpoint Baseline
+
+The Windows endpoint is:
+
+```text
+Hostname: JAMES-VM
+IP: 192.168.64.17
+```
+
+The baseline identified:
+
+- Windows 10 Home
+- DisplayVersion 25H2
+- Build 26200.9550
+- 4 logical processors
+- Approximately 4 GB RAM
+- Ethernet interface on `192.168.64.17`
+- Default gateway `192.168.64.1`
+
+![Windows system baseline](evidence/01-windows-system-baseline.png)
 
 ### Why this matters
 
-The Mac hosts the central SIEM used for correlation.
+This endpoint will later generate the controlled activity used in the StegaShield pilot.
 
-If the SOC platform itself is not understood before testing, later telemetry gaps could incorrectly be attributed to the endpoint, network, or StegaShield.
+Its original state needs to be known before images are created, modified, transferred, and analyzed.
+
+---
+
+# Sysmon Baseline
+
+Sysmon was already installed on the Windows endpoint.
+
+The baseline showed:
+
+```text
+Sysmon      Running
+Sysmon64    Stopped
+```
+
+The running `Sysmon` service is the relevant service for this environment.
+
+![Windows Sysmon baseline](evidence/02-windows-sysmon-baseline.png)
+
+The configuration was also inspected.
+
+Configuration file:
+
+```text
+C:\Windows\System32\sysmonconfig-swift.xml
+```
+
+The configured hashing algorithms included:
+
+```text
+MD5
+SHA256
+IMPHASH
+```
+
+Recent Sysmon telemetry included Event IDs such as:
+
+```text
+1   Process Create
+11  File Create
+```
+
+Network connection monitoring was enabled but filtered.
+
+That limitation matters because future network activity cannot automatically be assumed to appear in Sysmon.
+
+### Why this matters
+
+Later investigations may correlate image creation, processes, file activity, and network behavior.
+
+Understanding the Sysmon configuration first prevents me from assuming visibility that the endpoint does not actually provide.
+
+---
+
+# Splunk Forwarding Configuration
+
+The Splunk Universal Forwarder was already installed and running on Windows.
+
+Its existing output configuration pointed to:
+
+```text
+192.168.64.1:9997
+```
+
+![Splunk forwarding configuration](evidence/03-splunk-forwarding-configuration.png)
+
+This established where the Windows endpoint expected to send its telemetry before connectivity was tested.
 
 ---
 
@@ -72,12 +161,6 @@ If the SOC platform itself is not understood before testing, later telemetry gap
 Splunk Enterprise was installed on the Mac, but the first status check showed that `splunkd` was not running.
 
 This immediately affected the Windows telemetry path.
-
-The Windows Splunk Universal Forwarder was configured to send events to:
-
-```text
-192.168.64.1:9997
-```
 
 Because Splunk was stopped, the initial TCP 9997 connectivity test from Windows failed.
 
@@ -90,7 +173,7 @@ After the service started:
 - Splunk Web was available locally
 - Windows could establish a connection to the receiver
 
-![Splunk forwarding recovery](evidence/02-splunk-forwarding-recovery.png)
+![Splunk forwarding recovery](evidence/04-splunk-forwarding-recovery.png)
 
 ## Troubleshooting Chain
 
@@ -123,85 +206,6 @@ TCP 9997 became available and Windows successfully established the forwarding co
 The Splunk service was stopped during the initial baseline.
 
 This was important to document because the recovered state must not be presented as the original baseline state.
-
----
-
-# Windows Endpoint Baseline
-
-The Windows endpoint is:
-
-```text
-Hostname: JAMES-VM
-IP: 192.168.64.17
-```
-
-The baseline identified:
-
-- Windows 10 Home
-- DisplayVersion 25H2
-- Build 26200.9550
-- 4 logical processors
-- Approximately 4 GB RAM
-- Ethernet interface on `192.168.64.17`
-- Default gateway `192.168.64.1`
-
-![Windows system baseline](evidence/03-windows-system-baseline.png)
-
-### Why this matters
-
-This endpoint will later generate the controlled activity used in the StegaShield pilot.
-
-Its original state needs to be known before images are created, modified, transferred, and analyzed.
-
----
-
-# Sysmon Baseline
-
-Sysmon was already installed on the Windows endpoint.
-
-The baseline showed:
-
-```text
-Sysmon      Running
-Sysmon64    Stopped
-```
-
-The running `Sysmon` service is the relevant service for this environment.
-
-The configuration was also inspected.
-
-Configuration file:
-
-```text
-C:\Windows\System32\sysmonconfig-swift.xml
-```
-
-The configured hashing algorithms included:
-
-```text
-MD5
-SHA256
-IMPHASH
-```
-
-Recent Sysmon telemetry included Event IDs such as:
-
-```text
-1   Process Create
-11  File Create
-```
-
-Network connection monitoring was enabled but filtered.
-
-That limitation matters because future network activity cannot automatically be assumed to appear in Sysmon.
-
-![Windows Sysmon baseline](evidence/04-windows-sysmon-baseline.png)
-
-### Why this matters
-
-Later investigations may correlate image creation, processes, file activity, and network behavior.
-
-Understanding the Sysmon configuration first prevents me from assuming visibility that the endpoint does not actually provide.
 
 ---
 
@@ -284,6 +288,8 @@ The system baseline identified:
 - IP address `192.168.64.12/24`
 
 ![Ubuntu server baseline](evidence/06-ubuntu-server-baseline.png)
+
+The Machine ID and Boot ID are intentionally redacted from the public evidence.
 
 The hostname was originally:
 
@@ -492,7 +498,7 @@ This was cosmetic and did not change the security architecture.
 
 ## Correlated
 
-The Windows Universal Forwarder connection and Splunk search results together establish the existing telemetry path:
+The Windows Universal Forwarder configuration, TCP 9997 connectivity, and Splunk search results together establish the existing telemetry path:
 
 ```text
 Windows
@@ -597,14 +603,14 @@ Documenting them now gives the rest of the StegaShield pilot a known starting po
 
 # Evidence
 
-The Day 1 evidence is stored in:
+The Day 1 public evidence is stored in:
 
 ```text
 evidence/
-├── 01-mac-host-baseline.png
-├── 02-splunk-forwarding-recovery.png
-├── 03-windows-system-baseline.png
-├── 04-windows-sysmon-baseline.png
+├── 01-windows-system-baseline.png
+├── 02-windows-sysmon-baseline.png
+├── 03-splunk-forwarding-configuration.png
+├── 04-splunk-forwarding-recovery.png
 ├── 05-splunk-windows-telemetry.png
 ├── 06-ubuntu-server-baseline.png
 ├── 07-ubuntu-services-firewall-baseline.png
