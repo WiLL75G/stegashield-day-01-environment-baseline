@@ -2,89 +2,245 @@
 
 ## Overview
 
-Day 1 of my StegaShield detection validation pilot establishes the state of the lab before controlled StegaShield testing begins.
+Day 1 establishes the environment baseline for my StegaShield detection validation pilot before any controlled steganography testing begins.
 
-The purpose of this investigation is simple:
+The goal was to understand the existing state of the lab, verify the telemetry path, identify inherited services and background activity, and document any changes made during baseline collection.
 
-**Understand what already exists before introducing new variables.**
-
-Without a baseline, later activity could be incorrectly attributed to StegaShield, the HTTPS workflow, Zeek, or the controlled image testing when it may have already existed in the environment.
-
-This investigation covers:
-
-* Mac M2 host
-* Windows endpoint
-* Ubuntu server
-* Splunk Enterprise
-* Splunk Universal Forwarder
-* Sysmon
-* Docker
-* Firewall state
-* Existing services
-* Network connectivity
-* Time synchronization
-* Background activity
-
-No StegaShield performance conclusions are made on Day 1.
+This gives me a known starting point before I introduce controlled images, StegaShield, Zeek, and the HTTPS testing workflow.
 
 ---
 
 ## Lab Roles
 
-| System | Role | Address |
-| --- | --- | --- |
-| Mac M2 | Splunk Enterprise and lab host | 192.168.146.66 on current host network |
-| Windows | Simulated corporate endpoint | 192.168.64.17 |
-| Ubuntu 24.04 | Controlled server environment | 192.168.64.12 |
+The pilot uses three systems:
 
-The Windows and Ubuntu VMs communicate across the existing virtual lab network.
+**Mac M2 Host**
+- SOC analysis system
+- Splunk Enterprise
+- Lab management
 
-The Mac hosts Splunk Enterprise and manages the virtual environment.
+**Windows Endpoint**
+- Hostname: `JAMES-VM`
+- IP address: `192.168.64.17`
+- Controlled endpoint
+- Sysmon
+- Windows Event Logs
+- Splunk Universal Forwarder
 
----
+**Ubuntu Server**
+- Hostname: `ubuntu`
+- IP address: `192.168.64.12`
+- Controlled server
+- Future StegaShield host
+- Future HTTPS receiver
+- Future Zeek sensor
 
-# 1. Mac Host Baseline
+The purpose of Day 1 was not to deploy those future components.
 
-The host is an Apple M2 Mac with 8 GB of memory.
-
-At the time of the baseline:
-
-* Hardware: Apple M2
-* CPU: 8 cores
-* Memory: 8 GB
-* macOS: 27.0.1
-* Build: 26A434
-* Splunk Enterprise: 10.4.0
-* Docker CLI: 29.8.1
-* Current host IPv4: 192.168.146.66
-
-The host network address differs from historical addresses used in earlier versions of the lab, so previous addressing was not assumed to still be valid.
-
-Sensitive hardware identifiers such as the serial number, UUID, and device identifiers are intentionally excluded from the public evidence.
-
-### Evidence 1: Mac Host Baseline
-
-![Mac host system baseline](evidence/01-mac-host-baseline.png)
-
-This evidence establishes the physical host and operating environment supporting the pilot.
+The purpose was to document what already existed before testing.
 
 ---
 
-# 2. Splunk Baseline
+# Mac Host Baseline
 
-Splunk Enterprise was already installed on the Mac before this pilot.
+The Mac is the SOC analysis host for this pilot.
 
-The configured receiving port was:
+The baseline confirmed:
+
+- Apple M2
+- 8 CPU cores
+- 8 GB RAM
+- macOS 27.0.1
+- Splunk Enterprise installed
+- Splunk version 10.4.0
+- Docker client installed
+
+The active Mac network interface was also documented before testing.
+
+![Mac host baseline](evidence/01-mac-host-baseline.png)
+
+### Why this matters
+
+The Mac hosts the central SIEM used for correlation.
+
+If the SOC platform itself is not understood before testing, later telemetry gaps could incorrectly be attributed to the endpoint, network, or StegaShield.
+
+---
+
+# Splunk Baseline and Troubleshooting
+
+Splunk Enterprise was installed on the Mac, but the first status check showed that `splunkd` was not running.
+
+This immediately affected the Windows telemetry path.
+
+The Windows Splunk Universal Forwarder was configured to send events to:
+
+```text
+192.168.64.1:9997
+```
+
+Because Splunk was stopped, the initial TCP 9997 connectivity test from Windows failed.
+
+Splunk was then started as a deliberate corrective action.
+
+After the service started:
+
+- `splunkd` was running
+- TCP 9997 was listening
+- Splunk Web was available locally
+- Windows could establish a connection to the receiver
+
+![Splunk forwarding recovery](evidence/02-splunk-forwarding-recovery.png)
+
+## Troubleshooting Chain
+
+**Expected**
+
+Windows telemetry should reach Splunk through TCP 9997.
+
+**Observed**
+
+The Windows connection to TCP 9997 initially failed.
+
+**Hypothesis**
+
+The problem was on the receiving side rather than the Windows Universal Forwarder.
+
+**Evidence**
+
+Splunk was installed but `splunkd` was not running.
+
+**Action**
+
+Splunk was started.
+
+**Verification**
+
+TCP 9997 became available and Windows successfully established the forwarding connection.
+
+**Root Cause**
+
+The Splunk service was stopped during the initial baseline.
+
+This was important to document because the recovered state must not be presented as the original baseline state.
+
+---
+
+# Windows Endpoint Baseline
+
+The Windows endpoint is:
+
+```text
+Hostname: JAMES-VM
+IP: 192.168.64.17
+```
+
+The baseline identified:
+
+- Windows 10 Home
+- DisplayVersion 25H2
+- Build 26200.9550
+- 4 logical processors
+- Approximately 4 GB RAM
+- Ethernet interface on `192.168.64.17`
+- Default gateway `192.168.64.1`
+
+![Windows system baseline](evidence/03-windows-system-baseline.png)
+
+### Why this matters
+
+This endpoint will later generate the controlled activity used in the StegaShield pilot.
+
+Its original state needs to be known before images are created, modified, transferred, and analyzed.
+
+---
+
+# Sysmon Baseline
+
+Sysmon was already installed on the Windows endpoint.
+
+The baseline showed:
+
+```text
+Sysmon      Running
+Sysmon64    Stopped
+```
+
+The running `Sysmon` service is the relevant service for this environment.
+
+The configuration was also inspected.
+
+Configuration file:
+
+```text
+C:\Windows\System32\sysmonconfig-swift.xml
+```
+
+The configured hashing algorithms included:
+
+```text
+MD5
+SHA256
+IMPHASH
+```
+
+Recent Sysmon telemetry included Event IDs such as:
+
+```text
+1   Process Create
+11  File Create
+```
+
+Network connection monitoring was enabled but filtered.
+
+That limitation matters because future network activity cannot automatically be assumed to appear in Sysmon.
+
+![Windows Sysmon baseline](evidence/04-windows-sysmon-baseline.png)
+
+### Why this matters
+
+Later investigations may correlate image creation, processes, file activity, and network behavior.
+
+Understanding the Sysmon configuration first prevents me from assuming visibility that the endpoint does not actually provide.
+
+---
+
+# Windows to Splunk Telemetry
+
+After the Splunk receiver was restored, the telemetry path was verified.
+
+An established TCP connection existed between:
+
+```text
+192.168.64.17
+```
+
+and the Splunk receiver on:
 
 ```text
 TCP 9997
 ```
 
-However, checking the service revealed that Splunk was not running.
+The connection was associated with the Windows Splunk Universal Forwarder process.
 
-This mattered because the Windows endpoint depends on the Splunk Universal Forwarder sending telemetry to the Mac on TCP 9997.
+A Splunk search for `JAMES-VM` confirmed that Windows telemetry was being indexed.
 
-## Expected
+The available telemetry included:
+
+```text
+Windows Security
+Sysmon
+PowerShell
+System
+Application
+Windows Defender
+```
+
+![Windows telemetry in Splunk](evidence/05-splunk-windows-telemetry.png)
+
+## What this proves
+
+The evidence supports this telemetry path:
 
 ```text
 Windows
@@ -93,231 +249,47 @@ Splunk Universal Forwarder
    |
 TCP 9997
    |
-Mac Splunk Enterprise
-```
-
-## Observed
-
-Splunk was installed and the receiving configuration existed, but `splunkd` was not running.
-
-The initial Windows connectivity test to TCP 9997 therefore failed.
-
-This was an important baseline finding because a failed telemetry path could otherwise have been mistaken for a problem introduced later in the pilot.
-
-### Evidence 2: Splunk Initial State and Recovery
-
-![Splunk baseline and TCP 9997 recovery](evidence/02-splunk-forwarding-recovery.png)
-
-## Corrective Change
-
-Splunk was started.
-
-Starting Splunk also generated new certificates under the existing Splunk authentication directory.
-
-That means the action changed system state and is documented rather than being presented as part of the untouched original baseline.
-
-## Verification
-
-After Splunk started:
-
-* `splunkd` was running
-* TCP 9997 was listening
-* Splunk Web was available locally
-* Windows could reach TCP 9997
-* The Windows Splunk forwarder established a connection
-
-The troubleshooting chain was:
-
-```text
-Expected telemetry flow
-        |
-        v
-TCP 9997 test failed
-        |
-        v
-Splunk found stopped
-        |
-        v
-Splunk started
-        |
-        v
-TCP 9997 listening
-        |
-        v
-Windows connection established
-        |
-        v
-Telemetry verified in Splunk
-```
-
----
-
-# 3. Windows Endpoint Baseline
-
-The Windows VM is the simulated corporate endpoint for the pilot.
-
-Baseline state:
-
-| Field | Value |
-| --- | --- |
-| Hostname | JAMES-VM |
-| Operating System | Windows 10 Home |
-| Display Version | 25H2 |
-| Build | 26200.9550 |
-| Logical CPUs | 4 |
-| Memory | 3.99 GB |
-| System Drive | 63 GB |
-| Free Space | 24.31 GB |
-| IPv4 | 192.168.64.17 |
-| Gateway | 192.168.64.1 |
-
-An earlier assumption that this VM was Windows 11 was incorrect.
-
-The baseline therefore records the operating system reported by the system itself rather than carrying the historical assumption into the pilot.
-
-### Evidence 3: Windows System Baseline
-
-![Windows endpoint system baseline](evidence/03-windows-system-baseline.png)
-
-This screenshot establishes the endpoint identity, operating system, resources, and network state before controlled testing.
-
----
-
-# 4. Sysmon Baseline
-
-Sysmon was already installed before the pilot.
-
-The active service was:
-
-```text
-Sysmon
-```
-
-A second `Sysmon64` service existed but was stopped.
-
-It was not started because the objective was to document the existing telemetry state rather than introduce an unnecessary change.
-
-The active configuration was:
-
-```text
-C:\Windows\System32\sysmonconfig-swift.xml
-```
-
-Configuration SHA256:
-
-```text
-055FEBC600E6D7448CDF3812307275912927A62B1F94D0D933B64B294BC87162
-```
-
-The configuration includes telemetry such as process creation and file creation.
-
-Network connection logging is enabled but filtered.
-
-This distinction matters later in the pilot because the absence of a Sysmon network event cannot automatically be interpreted as the absence of network activity.
-
-### Evidence 4: Sysmon Baseline
-
-![Windows Sysmon service and configuration baseline](evidence/04-windows-sysmon-baseline.png)
-
-This evidence establishes the endpoint telemetry source and an important visibility limitation before testing begins.
-
----
-
-# 5. Windows to Splunk Telemetry
-
-The Windows Splunk Universal Forwarder was already installed and running.
-
-Version:
-
-```text
-10.2.2
-```
-
-The configured destination was:
-
-```text
-192.168.64.1:9997
-```
-
-After Splunk was restored on the Mac, an established TCP connection was observed from:
-
-```text
-192.168.64.17
-```
-
-to:
-
-```text
-192.168.64.1:9997
-```
-
-The connection belonged to the Splunk forwarder process.
-
-A Splunk search for `JAMES-VM` over the previous 24 hours returned **4,062 events**.
-
-Observed sources included:
-
-| Source | Events |
-| --- | ---: |
-| Windows Security | 1,965 |
-| Sysmon | 1,155 |
-| PowerShell | 583 |
-| System | 248 |
-| Application | 86 |
-| Windows Defender | 25 |
-
-### Evidence 5: Windows Telemetry in Splunk
-
-![Windows telemetry reaching Splunk](evidence/05-splunk-windows-telemetry.png)
-
-This proves the following telemetry path was operational:
-
-```text
-JAMES-VM
-   |
-Splunk Universal Forwarder
-   |
-TCP 9997
-   |
 Splunk Enterprise
 ```
 
-It does **not** prove that StegaShield telemetry exists.
+It does **not** prove:
 
-It does **not** prove that HTTPS image transfers are visible.
+- StegaShield visibility
+- HTTPS image visibility
+- hidden content detection
+- image exfiltration
 
-It does **not** prove image content can be inspected.
-
-It proves that the existing Windows telemetry pipeline into Splunk is operational.
+Those are separate questions that will be tested later.
 
 ---
 
-# 6. Ubuntu Server Baseline
+# Ubuntu Server Baseline
 
-Ubuntu provides the controlled server side of the pilot.
+The Ubuntu server is:
 
-Baseline state:
+```text
+Hostname: ubuntu
+IP: 192.168.64.12
+```
 
-| Field | Value |
-| --- | --- |
-| Hostname | ubuntu |
-| OS | Ubuntu 24.04.5 LTS |
-| Kernel | 6.8.0-146-generic |
-| Architecture | ARM64 |
-| CPUs | 4 |
-| Memory | 4.3 GiB |
-| Root Filesystem | 30 GB |
-| Root Used | 16 GB |
-| IPv4 | 192.168.64.12 |
-| Interface | enp0s1 |
+The system baseline identified:
 
-The VM originally used the hostname:
+- Ubuntu 24.04.5 LTS
+- Kernel 6.8.0-146-generic
+- ARM64 architecture
+- 4 CPUs
+- Approximately 4.3 GiB RAM
+- Approximately 30 GB root filesystem
+- Primary interface `enp0s1`
+- IP address `192.168.64.12/24`
+
+![Ubuntu server baseline](evidence/06-ubuntu-server-baseline.png)
+
+The hostname was originally:
 
 ```text
 wazuh-manager
 ```
-
-That hostname reflected an older lab role.
 
 It was changed to:
 
@@ -325,294 +297,202 @@ It was changed to:
 ubuntu
 ```
 
-during Day 1.
+because the previous hostname no longer represented the server's role in the pilot.
 
-This is documented as a deliberate baseline change and not presented as the original state.
-
-Sensitive identifiers such as Machine ID and Boot ID are excluded from public evidence.
-
-### Evidence 6: Ubuntu System and Network Baseline
-
-![Ubuntu server and network baseline](evidence/06-ubuntu-server-baseline.png)
+This was a deliberate Day 1 change and is documented as such.
 
 ---
 
-# 7. Docker and Existing Services
+# Ubuntu Services and Firewall Baseline
 
-Docker was already installed on Ubuntu.
+Ubuntu was not a completely clean server.
 
-Version:
+Several components already existed before the StegaShield pilot.
+
+Docker was installed and its service was active.
+
+The baseline showed no Docker containers running.
+
+Existing services included:
+
+- SSH
+- Apache
+- Samba
+- Wazuh agent
+- Docker
+
+UFW was also active.
+
+Its default policy included:
 
 ```text
-Docker 29.1.3
+deny incoming
+allow outgoing
+deny routed
 ```
 
-The Docker service was active.
+Existing firewall allowances were present from earlier lab work.
 
-The normal user did not have permission to access the Docker socket directly.
+![Ubuntu services and firewall baseline](evidence/07-ubuntu-services-firewall-baseline.png)
 
-Using elevated privileges showed that there were no existing Docker containers.
+### Why this matters
 
-This is important because future StegaShield containers can be distinguished from the original Day 1 state.
+These inherited services can create network traffic, logs, listeners, and background behavior unrelated to StegaShield.
 
-Existing services and listeners included:
-
-* SSH on TCP 22
-* Apache on TCP 80
-* Samba services
-* Local system services
-* Wazuh agent
-
-There was no HTTPS listener on TCP 443 during the baseline.
-
-StegaShield had not yet been deployed as part of the controlled pilot workflow.
-
-Zeek had not yet been deployed as part of the controlled pilot workflow.
-
-### Evidence 7: Ubuntu Services, Docker and Firewall
-
-![Ubuntu Docker services and firewall baseline](evidence/07-ubuntu-services-firewall-baseline.png)
+If they are not documented now, they could later be mistaken for pilot activity.
 
 ---
 
-# 8. Firewall Baseline
+# Inherited Wazuh Background Activity
 
-UFW was active on Ubuntu.
+The Ubuntu system already contained a Wazuh agent from earlier lab work.
 
-The baseline policy was:
-
-```text
-Incoming: deny
-Outgoing: allow
-Routed: deny
-```
-
-Existing allowances included services from previous lab work.
-
-A Windows test to Ubuntu TCP 80 failed even though Apache was listening.
-
-IP connectivity was successful.
-
-This distinction demonstrated that:
-
-```text
-Host reachable
-```
-
-does not automatically mean:
-
-```text
-Application port reachable
-```
-
-The firewall state therefore becomes important when the HTTPS receiver is introduced later in the pilot.
-
-No firewall rule was opened simply to make the Day 1 baseline appear successful.
-
----
-
-# 9. Existing Wazuh Background Activity
-
-The Ubuntu VM also contained an inherited Wazuh agent from previous lab work.
-
-The agent was active and configured for the old manager address:
+The agent was active and configured to communicate with:
 
 ```text
 192.168.64.1
 ```
 
-Repeated connection attempts to Wazuh ports were failing because no corresponding manager listener was available.
+using the existing Wazuh ports.
 
-This traffic existed **before StegaShield testing**.
+During the baseline, the agent repeatedly attempted to communicate with its previous manager configuration.
 
-That makes it important background noise.
+No corresponding Wazuh manager listener was available on the Mac during this snapshot.
 
-If similar network activity appears during later packet or network analysis, it should not automatically be attributed to the StegaShield workflow.
+This means the environment already contains identifiable background network noise.
 
-The Wazuh configuration was not repaired during the baseline because doing so would introduce another unrelated change.
+I did not repair or remove the Wazuh configuration during the initial baseline because doing so would alter the environment before its existing state was documented.
 
 ---
 
-# 10. Network Connectivity
+# Network Connectivity Baseline
 
-Network connectivity between the two VMs was tested rather than assumed.
+Basic connectivity between the pilot systems was tested.
 
-Ubuntu:
-
-```text
-192.168.64.12
-```
-
-Windows:
+Ubuntu successfully reached the Windows endpoint:
 
 ```text
 192.168.64.17
 ```
 
-Ubuntu successfully reached Windows with:
+The test returned:
 
 ```text
 4 packets transmitted
-4 packets received
+4 received
 0% packet loss
 ```
 
-Windows also demonstrated IP level reachability to Ubuntu.
+![Ubuntu to Windows connectivity](evidence/08-ubuntu-to-windows-connectivity.png)
 
-### Evidence 8: Ubuntu to Windows Connectivity
+Windows also demonstrated IP level reachability to Ubuntu during connectivity testing.
 
-![Ubuntu to Windows network connectivity](evidence/08-ubuntu-to-windows-connectivity.png)
+However, an attempted TCP connection to Ubuntu port 80 failed while IP connectivity remained available.
 
-This establishes basic bidirectional IP reachability between the systems that will later participate in the controlled transfer workflow.
+The existing UFW policy explained why basic reachability did not automatically mean application level access.
 
-It does not establish that HTTPS is configured.
+### What this proves
 
-It does not establish that TCP 443 is reachable.
+The two VMs can communicate at the network layer.
 
-Those are separate validation steps for later in the pilot.
+It does **not** prove that the future HTTPS image transfer workflow is working.
+
+That will be established separately.
 
 ---
 
-# 11. Time Synchronization
+# Time Synchronization Baseline
 
-Time consistency matters because later investigations will correlate events from multiple systems.
+Time matters because later investigation will correlate events across:
 
-The systems were using different local time zones:
+- Windows
+- Ubuntu
+- Splunk
+- Zeek
+- StegaShield
+
+The systems were therefore checked before controlled testing.
+
+Ubuntu reported synchronized time with NTP active.
+
+Windows successfully contacted its configured time source during testing, but some Windows time status fields remained inconsistent after synchronization.
+
+Rather than describing Windows time synchronization as completely healthy, I am keeping this as an evidence gap.
+
+For later correlation, timestamps will be normalized to UTC where appropriate.
+
+---
+
+# Changes Made During Day 1
+
+The following changes occurred during baseline collection and are therefore documented separately from the original observed state.
+
+### 1. Splunk Started
+
+Splunk was found stopped.
+
+It was started to restore the existing Windows telemetry path.
+
+### 2. Mac `top` Alias Corrected
+
+The shell contained:
 
 ```text
-Mac      PDT
-Windows  Pacific Time
-Ubuntu   UTC
+alias top="btop"
 ```
 
-Ubuntu reported synchronized time.
+This prevented the native macOS `top` command from running normally.
 
-Windows initially produced conflicting evidence.
+The alias was commented and the native command was verified.
 
-The Windows Time service initially reported Local CMOS Clock and unsynchronized status.
+### 3. Ubuntu Hostname Changed
 
-DNS resolution was also inconsistent during the first check.
-
-After additional validation:
-
-* `time.windows.com` resolved
-* NTP communication succeeded
-* Windows Time events indicated synchronization activity
-* The source changed to `time.windows.com`
-* A successful synchronization timestamp was recorded
-
-However, another status output continued to report values inconsistent with a fully healthy synchronized state.
-
-Because the evidence conflicts, I am not documenting Windows time synchronization as completely healthy.
-
-Instead, it remains an evidence gap.
-
-For later correlation, timestamps will be normalized to UTC.
-
----
-
-# 12. Changes Made During Day 1
-
-A baseline should distinguish the original state from changes made while investigating it.
-
-The following changes occurred during Day 1:
-
-| Change | Reason | Effect |
-| --- | --- | --- |
-| Started Splunk Enterprise | Restore existing telemetry path | TCP 9997 and Windows ingestion restored |
-| Splunk generated new certificates | Consequence of service startup | Authentication files changed |
-| Removed custom `top` alias | Restore expected macOS command behaviour | `/usr/bin/top` available normally |
-| Renamed Ubuntu hostname | Remove obsolete Wazuh manager role name | Host now identified as `ubuntu` |
-| Changed Ubuntu shell prompt | Remove inherited cosmetic prompt | Standard prompt restored |
-
-No StegaShield component was deployed.
-
-No controlled steganographic image was generated.
-
-No Zeek deployment was performed.
-
-No HTTPS receiver was configured.
-
-Those activities belong to later stages of the pilot.
-
----
-
-# 13. Troubleshooting Record
-
-## Splunk Telemetry Path
-
-### Symptom
-
-Windows could not reach the configured Splunk receiving port.
-
-### Expected
+The hostname changed from:
 
 ```text
-JAMES-VM -> TCP 9997 -> Splunk Enterprise
+wazuh-manager
 ```
 
-### Actual
+to:
 
-TCP 9997 was unreachable.
+```text
+ubuntu
+```
 
-### Hypothesis
+The previous hostname represented an older lab role.
 
-The problem was on the receiving side rather than the Windows forwarder.
+### 4. Ubuntu Shell Prompt Changed
 
-### Evidence
+The existing custom shell prompt was replaced with a standard prompt.
 
-Splunk Enterprise was installed but `splunkd` was not running.
-
-### Change
-
-Splunk was started.
-
-### Verification
-
-TCP 9997 began listening.
-
-Windows successfully connected.
-
-An established forwarder connection was observed.
-
-Windows events were searchable in Splunk.
-
-### Root Cause
-
-The existing Splunk service was stopped.
-
-### Lesson
-
-A broken telemetry path does not automatically mean the forwarder, firewall, or network configuration is broken.
-
-Validate each layer independently.
+This was cosmetic and did not change the security architecture.
 
 ---
 
-# 14. Analysis
+# Day 1 Analysis
 
 ## Observed
 
-* Windows endpoint address was 192.168.64.17
-* Ubuntu address was 192.168.64.12
-* Windows and Ubuntu had IP level connectivity
-* Sysmon was running on Windows
-* Splunk Universal Forwarder was installed and running
-* Splunk Enterprise was initially stopped
-* TCP 9997 became reachable after Splunk was started
-* Windows telemetry became searchable in Splunk
-* Docker was installed and active on Ubuntu
-* No Docker containers existed
-* UFW was active
-* Apache, SSH, Samba, and Wazuh were inherited services
-* No HTTPS listener existed on TCP 443
-* Wazuh was generating failed connection attempts to its old manager
-* StegaShield had not yet been introduced into the controlled workflow
-* Zeek had not yet been introduced into the controlled workflow
+- Windows endpoint was reachable at `192.168.64.17`.
+- Ubuntu was reachable at `192.168.64.12`.
+- Sysmon was running on Windows.
+- Splunk Universal Forwarder was installed and running.
+- Splunk Enterprise was initially stopped.
+- Splunk was restored during baseline troubleshooting.
+- TCP 9997 became available after Splunk started.
+- Windows telemetry was searchable in Splunk.
+- Docker was installed on Ubuntu.
+- No Docker containers were running during the baseline.
+- UFW was active.
+- Ubuntu contained inherited services.
+- An inherited Wazuh agent was generating failed connection attempts toward its previous manager configuration.
+- Basic network reachability existed between Windows and Ubuntu.
+
+---
 
 ## Correlated
 
-The following telemetry path was verified:
+The Windows Universal Forwarder connection and Splunk search results together establish the existing telemetry path:
 
 ```text
 Windows
@@ -624,97 +504,119 @@ TCP 9997
 Splunk Enterprise
 ```
 
-The following network relationship was also established:
+The Windows and Ubuntu connectivity tests establish basic communication between the two pilot VMs.
 
-```text
-Windows 192.168.64.17
-        <= IP connectivity =>
-Ubuntu 192.168.64.12
-```
+---
 
 ## Interpretation
 
-The environment is suitable to proceed to controlled dataset preparation, but it is not a clean laboratory environment with zero background activity.
+The environment is ready to move into controlled dataset and ground truth preparation, but it is **not a clean environment**.
 
-Existing services, firewall rules, Wazuh connection attempts, telemetry filters, and time synchronization behaviour must be considered during later investigations.
+Existing services, firewall rules, Wazuh background activity, and telemetry configuration must be considered during later investigations.
 
-The baseline gives me a known reference point for distinguishing existing activity from activity introduced by the pilot.
+Most importantly:
 
-## Unknown
+```text
+Connectivity ≠ HTTPS transfer
 
-Day 1 does not establish:
+Telemetry ≠ image visibility
 
-* How StegaShield scores clean images
-* How StegaShield scores LSB modified images
-* Whether StegaShield produces false positives
-* Whether StegaShield produces false negatives
-* Whether results are repeatable
-* How useful Zeek will be in the final workflow
-* How the HTTPS transfer path will behave
-* Whether all relevant endpoint activity will be captured
-* Whether StegaShield evidence will improve SOC investigation confidence
+Image transfer ≠ steganography
+
+StegaShield signal ≠ exfiltration
+```
+
+Each layer needs to be validated independently.
+
+---
+
+# Unknown
+
+Day 1 does not answer whether:
+
+- StegaShield can distinguish clean images from controlled LSB modified images.
+- StegaShield produces repeatable probability scores.
+- False positives will occur.
+- False negatives will occur.
+- Different LSB payload preparation methods affect results.
+- Zeek telemetry will provide useful network context.
+- StegaShield results become more useful when correlated with endpoint and network telemetry.
 
 Those questions belong to later stages of the pilot.
 
 ---
 
-# 15. Evidence Gaps
+# Evidence Gaps
 
-## Windows Time State
+Two important evidence gaps remain from Day 1.
 
-Windows produced evidence of successful NTP communication while another status view continued to report values inconsistent with a fully synchronized state.
+### Windows Time State
 
-The discrepancy remains documented rather than being forced into a clean conclusion.
+Windows successfully communicated with its configured time source, but some status fields remained inconsistent.
 
-## Sysmon Network Visibility
+I will therefore avoid claiming that Windows time synchronization was completely healthy.
 
-Sysmon network connection logging is enabled but filtered.
+### Sysmon Network Visibility
 
-Future absence of a Sysmon network event therefore cannot automatically be interpreted as proof that a network connection did not occur.
+Sysmon network connection monitoring is enabled but filtered.
 
-## Existing Background Services
-
-The environment contains inherited services from earlier lab work.
-
-Later network analysis must distinguish pilot activity from this pre existing traffic.
+Future network activity cannot automatically be assumed to appear in Sysmon.
 
 ---
 
-# 16. Day 1 Disposition
+# Day 1 Disposition
 
-**PROCEED TO DAY 2**
+**Proceed to Day 2: Dataset and Ground Truth Preparation.**
 
-The environment baseline is sufficiently documented to begin controlled dataset and ground truth preparation.
+The core environment has been baselined.
 
-Day 1 does not validate StegaShield.
+The Windows endpoint and Ubuntu server can communicate, and the Windows to Splunk telemetry path has been verified.
 
-It establishes the reference state required to validate StegaShield properly later.
+The next step is to establish controlled ground truth before any image is submitted to StegaShield.
 
 ---
 
-# 17. Day 1 Lesson
+# Day 1 Lesson
 
-The most important lesson from Day 1 was that establishing a baseline is more than recording IP addresses and system specifications.
+A baseline is more than recording IP addresses and system specifications.
 
-The investigation uncovered:
+During this stage I found:
 
-* A stopped Splunk service
-* A broken telemetry path
-* Existing firewall restrictions
-* Inherited Wazuh traffic
-* Existing server services
-* Sysmon visibility limitations
-* A Windows time synchronization discrepancy
-* Historical assumptions that no longer matched the current environment
+- a stopped Splunk service
+- an inherited Wazuh configuration
+- existing Ubuntu services
+- firewall restrictions
+- filtered Sysmon network telemetry
+- a Windows time synchronization inconsistency
 
-Without documenting those conditions first, later pilot activity could easily be misinterpreted.
+Each of those conditions could influence what I observe later.
 
-The baseline now gives the rest of the investigation something to compare against.
+Documenting them now gives the rest of the StegaShield pilot a known starting point.
+
+---
+
+# Evidence
+
+The Day 1 evidence is stored in:
+
+```text
+evidence/
+├── 01-mac-host-baseline.png
+├── 02-splunk-forwarding-recovery.png
+├── 03-windows-system-baseline.png
+├── 04-windows-sysmon-baseline.png
+├── 05-splunk-windows-telemetry.png
+├── 06-ubuntu-server-baseline.png
+├── 07-ubuntu-services-firewall-baseline.png
+└── 08-ubuntu-to-windows-connectivity.png
+```
+
+Each screenshot supports a specific stage of the baseline rather than being included as decoration.
 
 ---
 
 ## Next Investigation
 
-**Day 2: Dataset and Ground Truth**
+**Day 2: Dataset and Ground Truth Preparation**
 
-The next stage will create the controlled image dataset and establish the known identity of every sample before StegaShield is allowed to influence the analysis.
+The next stage will establish the known clean and controlled modified image pairs before StegaShield is allowed to influence any classification decision.
