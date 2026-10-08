@@ -1,4 +1,4 @@
-# Day 1: Environment Baseline
+# Environment Baseline
 
 ## Overview
 
